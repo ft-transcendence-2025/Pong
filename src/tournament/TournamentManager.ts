@@ -42,7 +42,15 @@ export class TournamentManager {
     config?: any
   ): TournamentState {
     const id = `tournament-${this.nextTournamentId++}`;
-    const tournament = new TournamentState(id, name, createdBy, config);
+    const enforcedConfig = {
+      maxPlayers: 4,
+      minPlayers: 4,
+      registrationTimeout: config?.registrationTimeout ?? 120000,
+      matchTimeout: config?.matchTimeout ?? 600000,
+      isRanked: false,
+      allowSpectators: false,
+    };
+    const tournament = new TournamentState(id, name, createdBy, enforcedConfig);
 
     this.tournaments.set(id, tournament);
 

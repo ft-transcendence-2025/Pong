@@ -93,12 +93,12 @@ export class TournamentState {
     this.name = name;
     this.phase = TournamentPhase.REGISTRATION;
     this.config = {
-      maxPlayers: config?.maxPlayers || 4,
-      minPlayers: config?.minPlayers || 4,
+      maxPlayers: 4,
+      minPlayers: 4,
       registrationTimeout: config?.registrationTimeout || 120000, // 2 minutes
       matchTimeout: config?.matchTimeout || 600000, // 10 minutes
-      isRanked: config?.isRanked ?? false,
-      allowSpectators: config?.allowSpectators ?? true,
+      isRanked: false,
+      allowSpectators: false,
     };
     this.players = new Map();
     this.bracket = null;
