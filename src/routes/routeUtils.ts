@@ -8,6 +8,8 @@ import { LocalGameRoom } from "./../game/LocalGameRoom.js";
 import { LocalTournament } from "./../tournament/LocalTournament.js";
 import { Players } from "./../tournament/Tournament.js";
 import { tournament } from "./routes.js";
+import { TournamentManager } from "./../tournament/TournamentManager.js";
+import { MatchStatus } from "./../tournament/TournamentState.js";
 
 function isSamePlayer(room: RemoteGameRoom, playerName: string): boolean {
   return room.player1StoredName === playerName || room.player2StoredName === playerName;
@@ -40,6 +42,15 @@ export function isPlayerInActiveGame(playerName: string): boolean {
 
   for (const room of customGameRoom.values()) {
     if (isSamePlayer(room, playerName) && isRoomActive(room)) {
+      return true;
+    }
+  }
+
+  const tournamentManager = TournamentManager.getInstance();
+  const tournament = tournamentManager.getPlayerTournament(playerName);
+  if (tournament) {
+    const match = tournament.getNextMatch(playerName);
+    if (match && match.status === MatchStatus.IN_PROGRESS) {
       return true;
     }
   }
