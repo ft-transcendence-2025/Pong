@@ -11,6 +11,7 @@ export class TournamentManager {
   private gameIdToMatch: Map<number, { tournamentId: string; matchId: string }>;
   private registrationTimers: Map<string, NodeJS.Timeout>;
   private matchTimers: Map<string, NodeJS.Timeout>;
+  private registrationWarnings: Set<string>;
   
   private static instance: TournamentManager;
   private nextTournamentId: number = 1;
@@ -21,6 +22,7 @@ export class TournamentManager {
     this.gameIdToMatch = new Map();
     this.registrationTimers = new Map();
     this.matchTimers = new Map();
+  this.registrationWarnings = new Set();
 
     // Start cleanup interval
     this.startCleanupInterval();
@@ -53,6 +55,7 @@ export class TournamentManager {
     const tournament = new TournamentState(id, name, createdBy, enforcedConfig);
 
     this.tournaments.set(id, tournament);
+  this.registrationWarnings.delete(id);
 
     // Set up event listeners
     this.setupTournamentListeners(tournament);
@@ -99,6 +102,7 @@ export class TournamentManager {
     this.clearAllMatchTimers(tournamentId);
 
     this.tournaments.delete(tournamentId);
+    this.registrationWarnings.delete(tournamentId);
     console.log(`[TournamentManager] Deleted tournament: ${tournamentId}`);
     return true;
   }
@@ -132,6 +136,7 @@ export class TournamentManager {
     }
 
     this.playerToTournament.set(player.id, tournamentId);
+    this.registrationWarnings.delete(tournamentId);
     this.broadcastTournamentState(tournament);
 
     return { success: true, tournament };
@@ -155,9 +160,35 @@ export class TournamentManager {
     this.playerToTournament.delete(playerId);
     this.broadcastTournamentState(tournament);
 
+    if (playerId === tournament.createdBy) {
+      this.broadcastToTournament(tournamentId, {
+        type: "tournament:closed",
+        data: {
+          reason: "creator_left",
+          message: "Tournament closed because the host left.",
+          redirectTo: "/remote-tournament"
+        }
+      });
+      this.deleteTournament(tournamentId);
+      return { success: true, message: "Tournament closed by creator" };
+    }
+
     // Delete tournament if empty and not started
     if (tournament.players.size === 0 && tournament.phase === TournamentPhase.REGISTRATION) {
+      this.broadcastToTournament(tournamentId, {
+        type: "tournament:closed",
+        data: {
+          reason: "empty",
+          message: "Tournament closed because all players left.",
+          redirectTo: "/remote-tournament"
+        }
+      });
       this.deleteTournament(tournamentId);
+    }
+    else if (tournament.phase === TournamentPhase.READY) {
+      tournament.setPhase(TournamentPhase.REGISTRATION);
+      this.registrationWarnings.delete(tournamentId);
+      this.startRegistrationTimer(tournament);
     }
 
     return { success: true };
@@ -387,20 +418,55 @@ export class TournamentManager {
    * Timers
    */
   private startRegistrationTimer(tournament: TournamentState): void {
+    this.clearRegistrationTimer(tournament.id);
     const timer = setTimeout(() => {
       console.log(`[TournamentManager] Registration timeout for tournament ${tournament.id}`);
-      
+
       if (tournament.phase === TournamentPhase.REGISTRATION) {
         if (tournament.players.size >= tournament.config.minPlayers) {
-          // Force all players to ready and start
           tournament.players.forEach((player) => {
             tournament.setPlayerReady(player.id, true);
           });
           tournament.start();
+          this.registrationWarnings.delete(tournament.id);
         } else {
-          // Cancel tournament - not enough players
-          console.log(`[TournamentManager] Tournament ${tournament.id} cancelled - not enough players`);
-          this.deleteTournament(tournament.id);
+          if (tournament.players.size === 0) {
+            console.log(`[TournamentManager] Tournament ${tournament.id} removed - empty after timeout`);
+            this.broadcastToTournament(tournament.id, {
+              type: "tournament:closed",
+              data: {
+                reason: "empty",
+                message: "Tournament closed because all players left.",
+                redirectTo: "/remote-tournament"
+              }
+            });
+            this.deleteTournament(tournament.id);
+            return;
+          }
+
+          const hasWarned = this.registrationWarnings.has(tournament.id);
+          if (!hasWarned) {
+            this.registrationWarnings.add(tournament.id);
+            this.broadcastToTournament(tournament.id, {
+              type: "tournament:registration_timeout",
+              data: {
+                message: "Not enough players joined yet. Keep the tournament open?",
+                waitingFor: Math.max(0, tournament.config.minPlayers - tournament.players.size)
+              }
+            });
+
+            // Reschedule to check again after the same timeout window
+            this.startRegistrationTimer(tournament);
+          } else {
+            this.broadcastToTournament(tournament.id, {
+              type: "tournament:registration_timeout",
+              data: {
+                message: "Still waiting for more players to join the bracket.",
+                waitingFor: Math.max(0, tournament.config.minPlayers - tournament.players.size)
+              }
+            });
+            this.startRegistrationTimer(tournament);
+          }
         }
       }
     }, tournament.config.registrationTimeout);
