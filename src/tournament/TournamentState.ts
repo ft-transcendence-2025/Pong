@@ -356,10 +356,11 @@ export class TournamentState {
         // Set up third place match
         const loser1 = sf1.player1?.id === sf1.winner?.id ? sf1.player2 : sf1.player1;
         const loser2 = sf2.player1?.id === sf2.winner?.id ? sf2.player2 : sf2.player1;
-        
-        if (this.bracket.thirdPlace && loser1 && loser2) {
+
+        if (this.bracket.thirdPlace) {
           this.bracket.thirdPlace.player1 = loser1;
           this.bracket.thirdPlace.player2 = loser2;
+          this.resolveThirdPlaceAutoAdvance();
         }
 
         this.emit("round:completed", { round: 1 });
@@ -372,6 +373,67 @@ export class TournamentState {
         bracket: this.bracket,
       });
     }
+  }
+
+  private resolveThirdPlaceAutoAdvance(): void {
+    if (!this.bracket || !this.bracket.thirdPlace) return;
+
+    const match = this.bracket.thirdPlace;
+
+    if (match.status !== MatchStatus.PENDING) {
+      return;
+    }
+
+    const participants = [
+      match.player1 ? { player: match.player1, slot: "player1" as const } : null,
+      match.player2 ? { player: match.player2, slot: "player2" as const } : null,
+    ].filter(Boolean) as Array<{ player: TournamentPlayer; slot: "player1" | "player2" }>;
+
+    if (participants.length === 0) {
+      const now = Date.now();
+      match.status = MatchStatus.COMPLETED;
+      match.startedAt = now;
+      match.completedAt = now;
+      match.score = { player1: 0, player2: 0 };
+      match.winner = undefined;
+      this.emit("match:completed", match);
+      return;
+    }
+
+    const connected = participants.filter(({ player }) => player.isConnected);
+
+    if (connected.length === participants.length) {
+      return;
+    }
+
+    if (connected.length === 0) {
+      const now = Date.now();
+      match.status = MatchStatus.COMPLETED;
+      match.startedAt = now;
+      match.completedAt = now;
+      match.score = { player1: 0, player2: 0 };
+      match.winner = undefined;
+      this.emit("match:completed", match);
+      return;
+    }
+
+    const winnerEntry = connected[0];
+    const now = Date.now();
+    match.status = MatchStatus.COMPLETED;
+    match.startedAt = now;
+    match.completedAt = now;
+    match.winner = winnerEntry.player;
+    match.score = {
+      player1: winnerEntry.slot === "player1" ? 5 : 0,
+      player2: winnerEntry.slot === "player2" ? 5 : 0,
+    };
+
+    this.emit("match:completed", match);
+    this.emit("match:forfeit", {
+      matchId: match.id,
+      winnerId: winnerEntry.player.id,
+      reason: "opponent_unavailable",
+    });
   }
 
   private findMatch(matchId: string): Match | undefined {

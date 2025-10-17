@@ -16,7 +16,7 @@ interface MatchAssignment {
 }
 
 const matchAssignments = new Map<string, MatchAssignment>();
-let nextTournamentGameId = 10000;
+let nextTournamentGameId = 5000;
 
 function buildMatchKey(tournamentId: string, matchId: string): string {
   return `${tournamentId}:${matchId}`;
@@ -193,7 +193,10 @@ async function handleMessage(
       break;
 
     case "player:unready":
-      handlePlayerUnready(ws, message, tournamentId, playerId, manager);
+      ws.send(JSON.stringify({
+        type: "error",
+        message: "Players cannot undo ready status once confirmed",
+      }));
       break;
 
     case "tournament:start":
@@ -243,31 +246,6 @@ function handlePlayerReady(
       data: {
         playerId,
         status: "ready",
-      },
-    });
-  } else {
-    ws.send(JSON.stringify({
-      type: "error",
-      message: result.message,
-    }));
-  }
-}
-
-function handlePlayerUnready(
-  ws: WebSocket,
-  message: TournamentMessage,
-  tournamentId: string,
-  playerId: string,
-  manager: TournamentManager
-): void {
-  const result = manager.setPlayerReady(tournamentId, playerId, false);
-
-  if (result.success) {
-    manager.broadcastToTournament(tournamentId, {
-      type: "player:status",
-      data: {
-        playerId,
-        status: "not_ready",
       },
     });
   } else {

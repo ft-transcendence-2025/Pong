@@ -521,9 +521,19 @@ export class TournamentManager {
     this.clearRegistrationTimer(tournament.id);
     this.clearAllMatchTimers(tournament.id);
 
+    // Release players so they can join a new bracket immediately after the finals
+    tournament.players.forEach((player) => {
+      this.playerToTournament.delete(player.id);
+    });
+
     // Archive after some time
     setTimeout(() => {
+      if (tournament.phase !== TournamentPhase.COMPLETED) {
+        return;
+      }
+
       tournament.setPhase(TournamentPhase.ARCHIVED);
+      this.broadcastTournamentState(tournament);
       
       // Optionally delete after archival
       setTimeout(() => {
